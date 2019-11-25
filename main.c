@@ -7,7 +7,7 @@ int main (int argc, char **argv)
     int childPid;
     char * cmdLine;
     parseInfo *info;
-    while (1)
+    while (1)                       // wait for user command
     {
         cmdLine = readline(">");
         info = parase(cmdLine);
