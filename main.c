@@ -161,6 +161,7 @@ int main (int argc, char **argv)
                 }
                 if (childPid == 0)                                                                  // child process
                 {
+                    printf("exec: %s \n",info[0]);
                     execvp(info[0], info);
                 }
                 else                                                                                // parent process
@@ -184,6 +185,7 @@ int main (int argc, char **argv)
                     }
                     else
                     {
+                        printf("wait command \n");
                         info = argumentsParser(cmdLine);
                         insertH(info, cmd_num, firstH, cmdLine, NULL);
                         waitpid(childPid,NULL,0);
@@ -339,7 +341,7 @@ int rowsAmount(char input[])
     // find amount of arguments
     while (input[i] != '\0')
     {
-        if (input[i] == ' ')
+        if (input[i] == ' ' && input[i+1] != ' ')
             k++;
         i++;
     }
@@ -350,7 +352,7 @@ int columnLength(char* input, int begin)
 {
     //printf("inside columnLength, input: %s, begin: %d \n", input, begin);
     int i=0;
-    //printf("input in place %d: %c",begin+i,input[begin+i]);
+    //printf("input in place %d: %c \n",begin+i,input[begin+i]);
     while (input[begin+i] != '\0' && (input[begin+i] != ' '))
     {
         i++;
@@ -363,7 +365,7 @@ int columnLength(char* input, int begin)
 //arguments parser
 char** argumentsParser(char* input)
 {
-    printf("input: %s \n",input);
+    //printf("input: %s \n",input);
     char** args;
     int i=0;                                                                                    // run over input
     int j=0;                                                                                    // run over argument
@@ -371,6 +373,7 @@ char** argumentsParser(char* input)
 
     // find amount of arguments
     k = rowsAmount(input);
+    //printf("k: %d \n", k);
     args = (char **) malloc(sizeof(char) * (k));
 
     i=0;
@@ -380,35 +383,61 @@ char** argumentsParser(char* input)
     {
         //printf("inside argument parser \n");
         j = columnLength(input, i);
+        //printf("j: %d \n",j);
         args[rows] = (char *) malloc(sizeof(char) * (j + 1));
         rows++;
-        if (input[j+1] == '\0')                                                                  // if input is finished
+        if (input[i+j+1] == '\0')                                                                  // if input is finished
             break;
-        i=j+1;                                                                                   // next char that is not a space (2???)
+        i=i+j+1;                                                                                   // next char that is not a space (2???)
     }
 
-    i=0;                                                                                         // run over input
-    int column = 0;                                                                                        // run over argument
-    int rows2=0;                                                                                         // run over returned array
-    while (input[i] != '\0' && rows2<k)
+    i=0;                                                                                    // run over input
+    j=0;                                                                                    // run over argument
+    k=0;                                                                                    // run over returned array
+    while (input[i] != '\0')
     {
-        j = columnLength(input, i);
-        //printf("j: %d \n",j);
-        while (input[i+column] != ' ' && column<j)
+        int length = columnLength(input, i);
+        //printf("length: %d \n",length);
+        while (input[i+j] != ' ' && input[i+j] != '\0' &&j<length+1)
         {
-            //j = columnLength(input, i+column);
-            printf("args[%d][%d]: %c \n",rows2,column, input[i+column]);
-            args[rows2][column] = input [i+column];
-            column++;
+            printf("args[%d][%d]: %c \n",k,j, input[i+j]);
+            args[k][j] = input [i+j];
+            j++;
         }
-        column=0;
-        //printf("out of while \n");
-        args[rows2][j] = '\0';
-        rows2++;
-        if (input[i+1] == '\0')                                                                  // if input is finished
+        //printf("finish: %c \n",'\0');
+        args[k][length] = '\0';
+        printf("args[%d][%d]: %c \n",k,length,args[k][length]);
+        k++;
+        j=0;
+        if (input[i+j+1] == '\0')                                                                  // if input is finished
             break;
-        i=j+1;                                                                                   // next char that is not a space
+        i=i+length+1;                                                                                   // next char that is not a space
     }
+
+
+
+//    i=0;                                                                                         // run over input
+//    int column = 0;                                                                                        // run over argument
+//    int rows2=0;                                                                                         // run over returned array
+//    while (input[i] != '\0' && rows2<k)
+//    {
+//        j = columnLength(input, i);
+//        //printf("j: %d \n",j);
+//        while (input[i+column] != ' ' && column<j+1)
+//        {
+//            //j = columnLength(input, i+column);
+//            printf("args[%d][%d]: %c \n",rows2,column, input[i+column]);
+//            args[rows2][column] = input [i+column];
+//            column++;
+//        }
+//        column=0;
+//        //printf("out of while \n");
+//        args[rows2][j] = '\0';
+//        rows2++;
+//        if (input[i+j+1] == '\0')                                                                  // if input is finished
+//            break;
+//        i=i+j+1;                                                                                   // next char that is not a space
+//    }
     return args;
 }
 
