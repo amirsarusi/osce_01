@@ -37,10 +37,10 @@ _Bool flagP = false;
 struct pipedCmd* firstP;
 void executeBuiltInCommand(short cmd_num);
 short isBuiltInCommand(char* info);
-char** parseInput(char* cmdLine);
-char** argumentsParser(char input[]);
+//char** parseInput(char* cmdLine);
+char** argumentsParser(char* input);
 int rowsAmount(char input[]);
-int columnLength(char input[], int begin);
+int columnLength(char* input, int begin);
 _Bool isBackgroundJob(char* info);
 int getHsteps(char info[]);
 short changeCmd(int steps, struct HistoryNode* firstH);
@@ -54,12 +54,14 @@ int isPiped(char* cmdLine);
 void pipedParsedCmd(char* cmdLine);
 void runPipedCommands(int numPipes , struct BackgroundNode* firstB);
 char* substring (int start , int fin , char* arr);
+char* trim(char* cmdLine, char c);
 void handler_bgPrcss ()
 {
     int sigPid = waitpid(-1 , NULL, WNOHANG);
 
     if (sigPid != -1)
     {
+        printf("child finished \n");
         removeBGLink (sigPid);
     }
 
@@ -67,14 +69,12 @@ void handler_bgPrcss ()
 
 int main (int argc, char **argv)
 {
-    printf("main /n");
-
     signal (SIGCHLD , handler_bgPrcss );
     int childPid;
     int backgroundPid;
     char* cmdLine;
     short cmd_num;
-    cmdLine = (char *)malloc(sizeof(char)*30);
+    cmdLine = (char *)malloc(sizeof(char)*100);
     char** info;
     int numOfPipesH = 0;
     int numbOfPipes = 0;
@@ -85,14 +85,16 @@ int main (int argc, char **argv)
     {
         printf("write command: ");
         // put working directory using pwd
-        //fgets(cmdLine, 30, stdin );
+        fgets(cmdLine, 30, stdin);
         //getline(cmdLine, 30, stdin);
-        scanf(cmdLine);
-        printf ("input is: %s", cmdLine);
+        //scanf("%s", cmdLine);
+        cmdLine = trim(cmdLine, '\n');
+        //printf ("input is: %s \n", cmdLine);
         cmd_num = isBuiltInCommand(cmdLine);
-        printf ("cmd num is: %d", cmd_num);
+        printf ("cmd num is: %d \n", cmd_num);
         if (cmd_num == 7)                                                                       // repeat command
         {
+            printf("repeated command \n");
             stepsH = getHsteps(cmdLine);
             cmd_num = changeCmd(stepsH, firstH);
             flagH = true;
@@ -104,6 +106,7 @@ int main (int argc, char **argv)
         }
         if(cmd_num != 0)                                                                             // if a built-in command
         {
+            printf("built in command \n");
             executeBuiltInCommand(cmd_num);
             flagH = false;
             if(cmd_num != 8)
@@ -112,18 +115,19 @@ int main (int argc, char **argv)
             }
             else
             {
-                info = parseInput(cmdLine);
+                info = argumentsParser(cmdLine);
                 insertH(info,cmd_num,firstH,cmdLine,NULL);
             }
         }
         else
         {
+            printf("shell command \n");
             numbOfPipes = isPiped(cmdLine);
             if(numbOfPipes || flagP)                                                                   //pipe
             {
+                printf("piped command \n");
                 if(flagH) //repeated pipe
                 {
-
                     firstP = repeatedHNode->pipedCmd;
                 }
                 else        //new pipe
@@ -147,8 +151,9 @@ int main (int argc, char **argv)
             }
             else                                                                                    //not repeated cmd
             {
-                info = parseInput(cmdLine);
-                insertH(info, cmd_num, firstH, cmdLine, NULL);
+                printf("regular command \n");
+                //info = argumentsParser(cmdLine);
+                //insertH(info, cmd_num, firstH, cmdLine, NULL);
                 flagH = false;
                 childPid = fork();
                 if (childPid == -1) {
@@ -157,10 +162,15 @@ int main (int argc, char **argv)
                 if (childPid == 0)                                                                  // child process
                 {
                     execvp(info[0], info);
-                } else                                                                                // parent process
+                }
+                else                                                                                // parent process
                 {
                     if (isBackgroundJob(cmdLine))
                     {
+                        printf("background command \n");
+                        cmdLine = trim(cmdLine, '&');
+                        info = argumentsParser(cmdLine);
+                        insertH(info, cmd_num, firstH, cmdLine, NULL);
                         backgroundPid = fork();
                         if (backgroundPid == -1)
                         {
@@ -174,6 +184,8 @@ int main (int argc, char **argv)
                     }
                     else
                     {
+                        info = argumentsParser(cmdLine);
+                        insertH(info, cmd_num, firstH, cmdLine, NULL);
                         waitpid(childPid,NULL,0);
                     }
                 }
@@ -182,48 +194,61 @@ int main (int argc, char **argv)
     }
 }
 
-
-//parse input to char array
-char** parseInput(char* cmdLine)
+char* trim(char* cmdLine, char c)
 {
-    char** args;
-    if (flagH)                                          // repeated command
+    int i=strlen(cmdLine);
+    while (cmdLine[i] != c)
     {
-        args = repeatedHNode->parsedCommand;
-        return args;
+        i--;
     }
-    else
-    {
-        int i=0;                                                                                    // run over input
-        int j=0;                                                                                    // run over argument
-        int k=0;                                                                                    // run over returned array
-
-        // find amount of arguments
-        k = rowsAmount(cmdLine);
-        args = (char **) malloc(sizeof(char) * (k));
-
-        i=0;
-        k=0;
-        // find length of every argument
-        while (cmdLine[i] != '\0')
-        {
-            j = columnLength(cmdLine, i);
-            args[k] = (char *) malloc(sizeof(char) * (j + 1));
-            k++;
-            if (cmdLine[j+1] == '\0')                                                                  // if input is finished
-                break;
-            i=j+1;                                                                                   // next char that is not a space (2???)
-        }
-        args = argumentsParser(cmdLine);
-        return args;
-    }
-
+    //printf("trimmed: %s .",substring(0, i-1, cmdLine));
+    return substring(0, i-1, cmdLine);
 }
+
+////parse input to char array
+//char** parseInput(char* cmdLine)
+//{
+//    char** args;
+//    if (flagH)                                          // repeated command
+//    {
+//        args = repeatedHNode->parsedCommand;
+//        return args;
+//    }
+//    else
+//    {
+//        int i=0;                                                                                    // run over input
+//        int j=0;                                                                                    // run over argument
+//        int k=0;                                                                                    // run over returned array
+//
+//        // find amount of arguments
+//        k = rowsAmount(cmdLine);
+//        printf("k: %d \n", k);
+//        args = (char **) malloc(sizeof(char) * (k));
+//
+//        i=0;
+//        int rows=0;
+//        // find length of every argument
+//        while (cmdLine[i] != '\0' && rows<k)
+//        {
+//            printf("inside parser \n");
+//            j = columnLength(cmdLine, i);
+//            printf("j: %d \n", j);
+//            args[rows] = (char *) malloc(sizeof(char) * (j + 1));
+//            rows++;
+//            if (cmdLine[j+1] == '\0')                                                                  // if input is finished
+//                break;
+//            i=j+1;                                                                                   // next char that is not a space (2???)
+//        }
+//        args = argumentsParser(cmdLine);
+//        return args;
+//    }
+//
+//}
 
 // if a built-in command, return a non-zero short
 short isBuiltInCommand(char* info)
 {
-    printf ("inside isBuiltInCommand function /n");
+    //printf ("inside isBuiltInCommand function \n");
     short cmd_num =0;
     char copy[10] = "";
     memcpy(copy, &info, 10);
@@ -253,35 +278,35 @@ void executeBuiltInCommand(short cmd_num)
     switch (cmd_num)
     {
         case 1 :
-            printf ("execute jobs");
+            printf ("execute jobs \n");
             //executeJobs();
             break;
         case 2 :
-            printf ("execute cd");
+            printf ("execute cd \n");
             //executeCd();
             //chdir
             break;
         case 3 :
-            printf ("execute history");
+            printf ("execute history \n");
             //executeHistory();
             break;
         case 4 :
-            printf ("execute exit");
+            printf ("execute exit \n");
             //executeExit();
             //check the background is empty
             break;
         case 5 :
-            printf ("execute kill");
+            printf ("execute kill \n");
             //executeKill();
             //kill
             break;
         case 8 :
-            printf ("execute history -s");
+            printf ("execute history -s \n");
             //if set > length we just change set, else we remove nodes
             //executeHistorySizeSet()
             break;
         case 6 :
-            printf ("execute help");
+            printf ("execute help \n");
             //executeHelp();
             ;
     }
@@ -321,20 +346,24 @@ int rowsAmount(char input[])
     return k+1;
 }
 
-int columnLength(char input[], int begin)
+int columnLength(char* input, int begin)
 {
+    //printf("inside columnLength, input: %s, begin: %d \n", input, begin);
     int i=0;
-    while (input[begin+i] != '\0' || (input[begin+i] != ' '))
+    //printf("input in place %d: %c",begin+i,input[begin+i]);
+    while (input[begin+i] != '\0' && (input[begin+i] != ' '))
     {
         i++;
     }
+    //printf("return i: %d \n", i);
     return i;
 }
 
 
 //arguments parser
-char** argumentsParser(char input[])
+char** argumentsParser(char* input)
 {
+    printf("input: %s \n",input);
     char** args;
     int i=0;                                                                                    // run over input
     int j=0;                                                                                    // run over argument
@@ -345,33 +374,40 @@ char** argumentsParser(char input[])
     args = (char **) malloc(sizeof(char) * (k));
 
     i=0;
-    k=0;
+    int rows=0;
     // find length of every argument
-    while (input[i] != '\0')
+    while (input[i] != '\0' && rows<k)
     {
+        //printf("inside argument parser \n");
         j = columnLength(input, i);
-        args[k] = (char *) malloc(sizeof(char) * (j + 1));
-        k++;
+        args[rows] = (char *) malloc(sizeof(char) * (j + 1));
+        rows++;
         if (input[j+1] == '\0')                                                                  // if input is finished
             break;
         i=j+1;                                                                                   // next char that is not a space (2???)
     }
 
     i=0;                                                                                         // run over input
-    j=0;                                                                                         // run over argument
-    k=0;                                                                                         // run over returned array
-    while (input[i] != '\0')
+    int column = 0;                                                                                        // run over argument
+    int rows2=0;                                                                                         // run over returned array
+    while (input[i] != '\0' && rows2<k)
     {
-        while (input[i+j] != ' ')
+        j = columnLength(input, i);
+        //printf("j: %d \n",j);
+        while (input[i+column] != ' ' && column<j)
         {
-            args[k][j] = input [i+j];
-            j++;
+            //j = columnLength(input, i+column);
+            printf("args[%d][%d]: %c \n",rows2,column, input[i+column]);
+            args[rows2][column] = input [i+column];
+            column++;
         }
-        args[k][j] = '\0';
-        k++;
-        if (input[j+1] == '\0')                                                                  // if input is finished
+        column=0;
+        //printf("out of while \n");
+        args[rows2][j] = '\0';
+        rows2++;
+        if (input[i+1] == '\0')                                                                  // if input is finished
             break;
-        i=j+2;                                                                                   // next char that is not a space
+        i=j+1;                                                                                   // next char that is not a space
     }
     return args;
 }
@@ -624,11 +660,12 @@ void pipedParsedCmd(char* cmdLine)
         {
             i++;
         }
-        tmp = parseInput(substring(j , i , cmdLine));
+        printf("sunstring: %s \n",substring(j , i-1 , cmdLine));
+        tmp = argumentsParser(substring(j , i-1 , cmdLine));
         if (firstP == NULL)
         {
             firstP = (struct pipedCmd*) malloc(sizeof(struct pipedCmd));
-            *firstP = (struct pipedCmd) { tmp, NULL , substring(j , i , cmdLine)};
+            *firstP = (struct pipedCmd) {tmp, NULL , substring(j , i , cmdLine)};
         }
         else
         {
