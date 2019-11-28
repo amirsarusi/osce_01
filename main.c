@@ -4,12 +4,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <math.h>
 
 struct HistoryNode {
     char** parsedCommand;
     struct HistoryNode* next;
     short cmd_numH;
     char* unparsedCmd;
+    struct pipedCmd* pipedCmd;
 };
 
 struct BackgroundNode {
@@ -18,30 +20,43 @@ struct BackgroundNode {
     struct BackgroundNode* next;
     struct BackgroundNode* previous;
 };
+struct pipedCmd
+{
+    char** parsedCmd;
+    struct pipedCmd* next;
+    char* cmdSS;
+};
+
 struct BackgroundNode* firstB = NULL;
 int lengthH =0;
 int setH = 10;
+_Bool flagB = false;
 _Bool flagH = false;
 struct HistoryNode* repeatedHNode;
-
+_Bool flagP = false;
+struct pipedCmd* firstP;
 void executeBuiltInCommand(short cmd_num);
 short isBuiltInCommand(char* info);
-char* parseInput(char* cmdLine);
+char** parseInput(char* cmdLine);
 char** argumentsParser(char input[]);
-//void executeCommand(char info[]);
 int rowsAmount(char input[]);
 int columnLength(char input[], int begin);
 _Bool isBackgroundJob(char* info);
 int getHsteps(char info[]);
-short changeCmd(int steps, HistoryNode* firstH);
-void getIndexNode(int index, HistoryNode* firstH);
-void insertH(char** cmdLine, short cmd_num ,  HistoryNode* firstH );
-void insertB(int pid ,BackgroundNode* firstB ,char* cmdLine );
+short changeCmd(int steps, struct HistoryNode* firstH);
+void getIndexNode(int index,struct HistoryNode* firstH);
+void insertH(char** info, short cmd_num ,  struct HistoryNode* firstH , char* cmdLine , struct pipedCmd* pipedP);
+void insertB(int pid ,struct BackgroundNode* firstB ,char* cmdLine );
 void removeBGLink (int pid );
 void printB();
+int isHPiped ();
+int isPiped(char* cmdLine);
+void pipedParsedCmd(char* cmdLine);
+void runPipedCommands(int numPipes , struct BackgroundNode* firstB);
+char* substring (int start , int fin , char* arr);
 void handler_bgPrcss ()
 {
-    int sigPid = waitpid(-1 , &status, WNOHANG);
+    int sigPid = waitpid(-1 , NULL, WNOHANG);
 
     if (sigPid != -1)
     {
@@ -57,75 +72,104 @@ int main (int argc, char **argv)
     int backgroundPid;
     char* cmdLine;
     short cmd_num;
-    cmdLine = (char *)malloc(sizeof(char)*20);
+    cmdLine = (char *)malloc(sizeof(char)*30);
     char** info;
-    //info = (char *)malloc(sizeof(char)*20);
-
+    int numOfPipesH = 0;
+    int numbOfPipes = 0;
     struct HistoryNode* firstH = NULL;
     int stepsH=0;
-
+    int pipesCtr = 0;
     while (1)                                                                                   // wait for user command
     {
         // put working directory using pwd
-        gets(cmdLine);
-        //info = parseInput(cmdLine);                                                             // check if can put the returned array in info???
+        fgets(cmdLine, 30, STDIN_FILENO );
+
         cmd_num = isBuiltInCommand(cmdLine);
         if (cmd_num == 7)                                                                       // repeat command
         {
             stepsH = getHsteps(cmdLine);
             cmd_num = changeCmd(stepsH, firstH);
             flagH = true;
+            numOfPipesH = isHPiped();
+            if (numOfPipesH)
+            {
+                flagP = true;
+            }
         }
-
         if(cmd_num)                                                                             // if a built-in command
         {
-            //inset built in command
             executeBuiltInCommand(cmd_num);
             flagH = false;
             if(cmd_num != 8)
             {
-                insertH(NULL, cmd_num , firstH , cmdLine);
+                insertH(NULL, cmd_num , firstH , cmdLine,NULL);
             }
             else
             {
                 info = parseInput(cmdLine);
-                insertH(info,cmd_num,firstH,cmdLine);
+                insertH(info,cmd_num,firstH,cmdLine,NULL);
             }
         }
         else
         {
-            //inset command
-            info = parseInput(cmdLine);
-            insertH(info,cmd_num,firstH,cmdLine);
-            flagH = false;
-            childPid = fork();
-            if (childPid == -1)
+            numbOfPipes = isPiped(cmdLine);
+            if(numbOfPipes || flagP)                                                                   //pipe
             {
-                perror("fork error");                                                         // print error???
-            }
-            if (childPid == 0)                                                                  // child process
-            {
-                execvp(info[0],info);
-            }
-            else                                                                                // parent process
-            {
-                if (isBackgroundJob(cmdLine))
+                if(flagH) //repeated pipe
                 {
-                    backgroundPid = fork();
-                    if (backgroundPid == -1)
-                    {
-                        perror("fork error");                                                         // print error???
-                    }
-                    if (backgroundPid == 0)                                                     // background process
-                    {
-                        insertB(getpid() , firstB , cmdLine );
-                        execvp(info[0],info);
-                    }
+
+                    firstP = repeatedHNode->pipedCmd;
+                }
+                else        //new pipe
+                {
+                    pipedParsedCmd(cmdLine);
+                }
+                insertH(NULL, cmd_num, firstH, cmdLine , firstP);
+                if(flagH)
+                {
+                    pipesCtr = numOfPipesH;
                 }
                 else
                 {
-                    //fix call!!!
-                    waitpid(childPid);
+                    pipesCtr = numbOfPipes;
+                }
+
+                runPipedCommands(pipesCtr,firstB);   //execute general + insert to background linked list if flagB = 1
+                firstP = NULL;
+                flagP = false;
+                flagH = false;
+            }
+            else                                                                                    //not repeated cmd
+             {
+                info = parseInput(cmdLine);
+                insertH(info, cmd_num, firstH, cmdLine, NULL);
+                flagH = false;
+                childPid = fork();
+                if (childPid == -1) {
+                    perror("fork error");                                                         // print error???
+                }
+                if (childPid == 0)                                                                  // child process
+                {
+                    execvp(info[0], info);
+                } else                                                                                // parent process
+                {
+                    if (isBackgroundJob(cmdLine))
+                    {
+                        backgroundPid = fork();
+                        if (backgroundPid == -1)
+                        {
+                            perror("fork error");                                                         // print error???
+                        }
+                        if (backgroundPid == 0)                                                     // background process
+                        {
+                            insertB(getpid(), firstB, cmdLine);
+                            execvp(info[0], info);
+                        }
+                    }
+                    else
+                    {
+                        waitpid(childPid,NULL,0);
+                    }
                 }
             }
         }
@@ -134,11 +178,9 @@ int main (int argc, char **argv)
 
 
 //parse input to char array
-// change to [][]!!!!!!!!!!!!!!!!!!!!
 char** parseInput(char* cmdLine)
 {
     char** args;
-    //info = if not from history - parse cmdLine into [][]
     if (flagH)                                          // repeated command
     {
         args = repeatedHNode->parsedCommand;
@@ -157,12 +199,12 @@ char** parseInput(char* cmdLine)
         i=0;
         k=0;
         // find length of every argument
-        while (cmdLine[i] != '/0')
+        while (cmdLine[i] != '\0')
         {
             j = columnLength(cmdLine, i);
             args[k] = (char *) malloc(sizeof(char) * (j + 1));
             k++;
-            if (cmdLine[j+1] == '/0')                                                                  // if input is finished
+            if (cmdLine[j+1] == '\0')                                                                  // if input is finished
                 break;
             i=j+1;                                                                                   // next char that is not a space (2???)
         }
@@ -191,7 +233,7 @@ short isBuiltInCommand(char* info)
         cmd_num = 5;
     else if (strcmp(info,"help") == 0)
         cmd_num = 6;
-    else if (strcmp(info[0],"!") == 0)
+    else if (info[0] == '!')
         cmd_num = 7;
     else if (strcmp(copy,"history -s") == 0)
         cmd_num = 8;
@@ -253,10 +295,10 @@ void executeBuiltInCommand(short cmd_num)
 
 int rowsAmount(char input[])
 {
-    int i=0;                                                                                    // run over input     // run over argument
+    int i=0;                                                                                    // run over input
     int k=0;                                                                                    // run over returned array
     // find amount of arguments
-    while (input[i] != '/0')
+    while (input[i] != '\0')
     {
         if (input[i] == ' ')
             k++;
@@ -268,7 +310,7 @@ int rowsAmount(char input[])
 int columnLength(char input[], int begin)
 {
     int i=0;
-    while (input[begin+i] != '/0' || (input[begin+i] != ' '))
+    while (input[begin+i] != '\0' || (input[begin+i] != ' '))
     {
         i++;
     }
@@ -291,12 +333,12 @@ char** argumentsParser(char input[])
     i=0;
     k=0;
     // find length of every argument
-    while (input[i] != '/0')
+    while (input[i] != '\0')
     {
         j = columnLength(input, i);
         args[k] = (char *) malloc(sizeof(char) * (j + 1));
         k++;
-        if (input[j+1] == '/0')                                                                  // if input is finished
+        if (input[j+1] == '\0')                                                                  // if input is finished
             break;
         i=j+1;                                                                                   // next char that is not a space (2???)
     }
@@ -304,16 +346,16 @@ char** argumentsParser(char input[])
     i=0;                                                                                         // run over input
     j=0;                                                                                         // run over argument
     k=0;                                                                                         // run over returned array
-    while (input[i] != '/0')
+    while (input[i] != '\0')
     {
         while (input[i+j] != ' ')
         {
             args[k][j] = input [i+j];
             j++;
         }
-        args[k][j] = '/0';
+        args[k][j] = '\0';
         k++;
-        if (input[j+1] == '/0')                                                                  // if input is finished
+        if (input[j+1] == '\0')                                                                  // if input is finished
             break;
         i=j+2;                                                                                   // next char that is not a space
     }
@@ -336,12 +378,12 @@ char** argumentsParser(char input[])
 //    i=0;
 //    k=0;
 //    // find length of every argument
-//    while (info[i] != '/0')
+//    while (info[i] != '\0')
 //    {
 //        j = columnLength(info, i);
 //        args[k] = (char *) malloc(sizeof(char) * (j + 1));
 //        k++;
-//        if (info[j+1] == '/0')                                                                  // if input is finished
+//        if (info[j+1] == '\0')                                                                  // if input is finished
 //            break;
 //        i=j+1;                                                                                   // next char that is not a space (2???)
 //    }
@@ -354,7 +396,7 @@ char** argumentsParser(char input[])
 _Bool isBackgroundJob(char* cmdLine)
 {
     int i=0;
-    while (cmdLine[i] != '/0')
+    while (cmdLine[i] != '\0')
     {
         if (cmdLine[i] == '&')
             return true;
@@ -368,19 +410,19 @@ int getHsteps(char info[])
     int number =0;
     int length=0;
     int i=1;
-    sign =1;
+    int sign =1;
     if (info[1] == '-')
     {
         sign = -1;
         i++;
     }
     int j= i;
-    while (info[i] != '/0')
+    while (info[i] != '\0')
     {
         length++;
         i++;
     }
-    while (info[j] != '/0')
+    while (info[j] != '\0')
     {
         number = number + ( info[j] * pow(10,length) );
         j++;
@@ -389,7 +431,7 @@ int getHsteps(char info[])
     return number*sign;
 }
 
-short changeCmd(int steps, HistoryNode* firstH)
+short changeCmd(int steps, struct HistoryNode* firstH)
 {
     int index;
     if (steps<0)
@@ -400,9 +442,9 @@ short changeCmd(int steps, HistoryNode* firstH)
     getIndexNode(index,firstH);
     return isBuiltInCommand(repeatedHNode->parsedCommand[0]);                       // just the command
 }
-void getIndexNode(int index, HistoryNode* firstH)
+void getIndexNode(int index,struct HistoryNode* firstH)
 {
-    HistoryNode* temp = firstH;
+    struct HistoryNode* temp = firstH;
     for (int i = 0; i <= index; ++i) {
         temp = temp->next;
     }
@@ -410,7 +452,7 @@ void getIndexNode(int index, HistoryNode* firstH)
 }
 
 // insert built ib command
-void insertH(char** info, short cmd_num ,  HistoryNode* firstH , char* cmdLine )
+void insertH(char** info, short cmd_num ,  struct HistoryNode* firstH , char* cmdLine , struct pipedCmd* pipedP)
 {
     //if there is still place to hold history
     if (lengthH < setH)
@@ -421,25 +463,24 @@ void insertH(char** info, short cmd_num ,  HistoryNode* firstH , char* cmdLine )
     {
         firstH = firstH->next;
     }
-
     if (firstH == NULL)
     {
         firstH = (struct HistoryNode *) malloc(sizeof(struct HistoryNode));
-        firstH-> { info, NULL, cmd_num , cmdLine };
+        *firstH = (struct HistoryNode){info, NULL, cmd_num , cmdLine , pipedP};
     }
     else
     {
-        HistoryNode *temp = firstH;
-        while (temp->next != null)
+        struct HistoryNode *temp = firstH;
+        while (temp->next != NULL)
         {
             temp = temp->next;
         }
         (temp->next) = (struct HistoryNode *) malloc(sizeof(struct HistoryNode));
-        (temp->next)-> { info, NULL, cmd_num , cmdLine  };
+        *(temp->next) = (struct HistoryNode) {info, NULL, cmd_num , cmdLine ,pipedP };
     }
 }
 
-void removeHLink ( int num , HistoryNode* firstH)
+void removeHLink ( int num , struct HistoryNode* firstH)
 {
     while (num > 0)
     {
@@ -449,36 +490,36 @@ void removeHLink ( int num , HistoryNode* firstH)
     }
     lengthH = setH;
 }
-void printH (HistoryNode* firstH)
+void printH (struct HistoryNode* firstH)
 {
    //add index numvers to the printf
-    HistoryNode *temp = firstH;
-    while (temp->next != null)
+    struct HistoryNode *temp = firstH;
+    while (temp->next != NULL)
     {
         printf("%s" , temp->unparsedCmd);
         temp = temp->next;
     }
 }
 
-void insertB(int pid ,BackgroundNode* firstB ,char* cmdLine )
+void insertB(int pid ,struct BackgroundNode* firstB ,char* cmdLine )
 {
     if (firstB == NULL)
     {
         firstB = (struct BackgroundNode *) malloc(sizeof(struct BackgroundNode));
-        firstB-> { cmdLine,pid, NULL, NULL };
+        *firstB = (struct BackgroundNode){ cmdLine,pid, NULL, NULL };
     }
     else
     {
-        BackgroundNode *temp = firstB;
-        BackgroundNode *last;
-        while (temp->next != null)
+        struct BackgroundNode *temp = firstB;
+        struct BackgroundNode *last;
+        while (temp->next != NULL)
         {
             temp = temp->next;
         }
 
         last = (struct BackgroundNode *) malloc(sizeof(struct BackgroundNode));
-        last-> { cmdLine,pid, NULL, temp };
-        temp = {.next = last};
+        *last = (struct BackgroundNode){ cmdLine,pid, NULL, temp };
+        *temp = (struct BackgroundNode){.next = last};
     }
 }
 
@@ -491,9 +532,9 @@ void removeBGLink (int pid )
     }
     else
     {
-        BackgroundNode *temp = firstB;
-        BackgroundNode *prev;
-        BackgroundNode *next;
+        struct BackgroundNode *temp = firstB;
+        struct BackgroundNode *prev;
+        struct BackgroundNode *next;
         while ( temp->pid != pid )
         {
             temp = temp->next;
@@ -508,11 +549,168 @@ void removeBGLink (int pid )
 
 void printB()
 {
-    BackgroundNode *temp = firstB;
+    struct BackgroundNode *temp = firstB;
     //add a structure to the printf
-    while (temp->next != null)
+    while (temp->next != NULL)
     {
         printf("%s" , temp->unparsedCmd);
         temp = temp->next;
     }
+}
+
+//returns the number of pipes in a cmd
+int isPiped(char* cmdLine)
+{
+    int counter = 0;
+    int i = 0;
+    while(cmdLine[i] != '\0')
+    {
+        if (cmdLine[i] == '|')
+        {
+            counter++;
+        }
+        i++;
+    }
+    return counter;
+}
+
+
+//returns the number of pipes in a cmd
+int isHPiped ()
+{
+    int counter = 0;
+    struct pipedCmd * tmp = repeatedHNode->pipedCmd;
+    if (repeatedHNode->pipedCmd != NULL)
+    {
+        while(tmp != NULL)
+        {
+            counter++;
+            tmp = tmp->next;
+        }
+    }
+    return counter;
+}
+
+void pipedParsedCmd(char* cmdLine)
+{
+    int i = 0;
+    int j = 0;
+    char** tmp;
+    while(cmdLine[i] != '\0')
+    {
+        while(cmdLine[i] != '|')
+        {
+            i++;
+        }
+        tmp = parseInput(substring(j , i , cmdLine));
+        if (firstP == NULL)
+        {
+            firstP = (struct pipedCmd*) malloc(sizeof(struct pipedCmd));
+            *firstP = (struct pipedCmd) { tmp, NULL , substring(j , i , cmdLine)};
+        }
+        else
+        {
+            struct pipedCmd *tmpP = firstP;
+            while (tmpP->next != NULL)
+            {
+                tmpP = tmpP->next;
+            }
+            (tmpP->next) = (struct pipedCmd*) malloc(sizeof(struct pipedCmd));
+            *(tmpP->next) = (struct pipedCmd){tmp, NULL,substring(j , i , cmdLine)};
+        }
+        i += 2;
+        j = i;
+    }
+}
+
+char* substring (int start , int fin , char* arr)
+{
+    int i = fin - start ;
+    char* tmp = (char *)malloc(sizeof(char)*(i+1));
+    while(i >= 0)
+    {
+        tmp[i] = arr[start + i];
+        i--;
+    }
+    return tmp;
+}
+
+void runPipedCommands(int numPipes, struct BackgroundNode* firstB)
+{
+    struct pipedCmd* command = firstP;
+    int status;
+    int i = 0;
+    int pid;
+    int pipefds[2*numPipes];
+
+    for(i = 0; i < (numPipes); i++)
+    {
+        if(pipe(pipefds + i*2) < 0)
+        {
+            perror("couldn't pipe");
+            exit(EXIT_FAILURE);
+        }
+    }
+    int j = 0;
+    while(command)
+    {
+        pid = fork();
+        if(pid == 0)
+        {
+            //if not last command
+            if(command->next)
+            {
+                if(dup2(pipefds[j + 1], 1) < 0)
+                {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+            }
+            //if not first command&& j!= 2*numPipes
+            if(j != 0 )
+            {
+                if(dup2(pipefds[j-2], 0) < 0)
+                {
+                    perror(" dup2");///j-2 0 j+1 1
+                    exit(EXIT_FAILURE);
+
+                }
+            }
+            for(i = 0; i < 2*numPipes; i++)
+            {
+                close(pipefds[i]);
+            }
+
+            if( execvp(command->parsedCmd[0], command->parsedCmd) < 0 )
+            {
+                perror(command->cmdSS);
+                exit(EXIT_FAILURE);
+            }
+            if(flagB)
+            {
+                insertB(pid,firstB , command->cmdSS );
+            }
+        }
+        else if(pid < 0)
+        {
+            perror("error");
+            exit(EXIT_FAILURE);
+        }
+        else if (pid >0)
+        {
+            command = command->next;
+            j+=2;
+        }
+    }
+    /**Parent closes the pipes and wait for children*/
+    for(i = 0; i < 2 * numPipes; i++)
+    {
+        close(pipefds[i]);
+    }
+    if(flagB)
+    {
+        for(i = 0; i < numPipes + 1; i++)
+            wait(&status);
+    }
+
 }
