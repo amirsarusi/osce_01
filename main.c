@@ -67,6 +67,8 @@ void handler_bgPrcss ()
 
 int main (int argc, char **argv)
 {
+    printf("main /n");
+
     signal (SIGCHLD , handler_bgPrcss );
     int childPid;
     int backgroundPid;
@@ -81,10 +83,14 @@ int main (int argc, char **argv)
     int pipesCtr = 0;
     while (1)                                                                                   // wait for user command
     {
+        printf("write command: ");
         // put working directory using pwd
-        fgets(cmdLine, 30, STDIN_FILENO );
-
+        //fgets(cmdLine, 30, stdin );
+        //getline(cmdLine, 30, stdin);
+        scanf(cmdLine);
+        printf ("input is: %s", cmdLine);
         cmd_num = isBuiltInCommand(cmdLine);
+        printf ("cmd num is: %d", cmd_num);
         if (cmd_num == 7)                                                                       // repeat command
         {
             stepsH = getHsteps(cmdLine);
@@ -96,7 +102,7 @@ int main (int argc, char **argv)
                 flagP = true;
             }
         }
-        if(cmd_num)                                                                             // if a built-in command
+        if(cmd_num != 0)                                                                             // if a built-in command
         {
             executeBuiltInCommand(cmd_num);
             flagH = false;
@@ -140,7 +146,7 @@ int main (int argc, char **argv)
                 flagH = false;
             }
             else                                                                                    //not repeated cmd
-             {
+            {
                 info = parseInput(cmdLine);
                 insertH(info, cmd_num, firstH, cmdLine, NULL);
                 flagH = false;
@@ -217,6 +223,7 @@ char** parseInput(char* cmdLine)
 // if a built-in command, return a non-zero short
 short isBuiltInCommand(char* info)
 {
+    printf ("inside isBuiltInCommand function /n");
     short cmd_num =0;
     char copy[10] = "";
     memcpy(copy, &info, 10);
@@ -246,28 +253,35 @@ void executeBuiltInCommand(short cmd_num)
     switch (cmd_num)
     {
         case 1 :
+            printf ("execute jobs");
             //executeJobs();
             break;
         case 2 :
+            printf ("execute cd");
             //executeCd();
             //chdir
             break;
         case 3 :
+            printf ("execute history");
             //executeHistory();
             break;
         case 4 :
+            printf ("execute exit");
             //executeExit();
             //check the background is empty
             break;
         case 5 :
+            printf ("execute kill");
             //executeKill();
             //kill
             break;
         case 8 :
+            printf ("execute history -s");
             //if set > length we just change set, else we remove nodes
             //executeHistorySizeSet()
             break;
         case 6 :
+            printf ("execute help");
             //executeHelp();
             ;
     }
@@ -424,7 +438,15 @@ int getHsteps(char info[])
     }
     while (info[j] != '\0')
     {
-        number = number + ( info[j] * pow(10,length) );
+        int pow = length;
+        int strength = 1;
+        while (pow > 0)
+        {
+            strength = strength*10;
+            pow--;
+        }
+        //number = number + ( info[j] * pow(10,length) );
+        number = number + ( info[j] * strength );
         j++;
         length--;
     }
@@ -492,7 +514,7 @@ void removeHLink ( int num , struct HistoryNode* firstH)
 }
 void printH (struct HistoryNode* firstH)
 {
-   //add index numvers to the printf
+    //add index numvers to the printf
     struct HistoryNode *temp = firstH;
     while (temp->next != NULL)
     {
